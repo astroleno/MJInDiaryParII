@@ -5,30 +5,31 @@
     {
       "src": "index.html",
       "use": "@vercel/static"
+    },
+    {
+      "src": "sardine.glb",
+      "use": "@vercel/static"
     }
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!sardine\\.glb).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/sardine.glb",
       "headers": [
         {
-          "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
+          "key": "Content-Type",
+          "value": "model/gltf-binary"
         },
         {
-          "key": "Cross-Origin-Opener-Policy",
-          "value": "same-origin"
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
         }
       ]
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
