@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "name": "fish-flocking-simulation",
   "builds": [
     {
       "src": "index.html",
@@ -11,25 +10,10 @@
       "use": "@vercel/static"
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/((?!sardine\\.glb).*)",
-      "destination": "/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/sardine.glb",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "model/gltf-binary"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        }
-      ]
+      "src": "/((?!sardine\\.glb).*)",
+      "dest": "/index.html"
     }
   ]
 }
