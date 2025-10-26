@@ -52,17 +52,9 @@
       "package.json"
     ],
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": "public/vite.svg"
+      "target": "portable",
+      "icon": "public/vite.svg",
+      "requestedExecutionLevel": "asInvoker"
     },
     "mac": {
       "target": "dmg",
