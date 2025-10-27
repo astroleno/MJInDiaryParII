@@ -1,33 +1,42 @@
-const { app, BrowserWindow, Menu } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
-// 保持对窗口对象的全局引用
+// 保持对窗口对象的全局引用，避免被垃圾回收
 let mainWindow;
 
 function createWindow() {
   // 创建浏览器窗口
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1920,
+    height: 1080,
+    minWidth: 1280,
+    minHeight: 720,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: false // 允许加载本地文件
+      webSecurity: true
     },
-    icon: path.join(__dirname, 'public/vite.svg'), // 应用图标
-    title: '鱼群模拟器',
-    show: false // 先不显示，等加载完成
+    // 全屏模式，提供沉浸式体验
+    fullscreen: true,
+    // 无边框窗口
+    frame: false,
+    // 窗口图标
+    icon: path.join(__dirname, 'dist/favicon/favicon.ico'),
+    // 窗口显示前不显示
+    show: false,
+    // 窗口标题
+    title: 'DistortionScroll - 诗意变形效果'
   });
 
-  // 加载应用
-  mainWindow.loadFile('index.html');
+  // 加载构建后的HTML文件
+  mainWindow.loadFile('dist/index.html');
 
-  // 窗口加载完成后显示
+  // 窗口准备好后显示，避免白屏
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // 开发模式下打开开发者工具
+    // 开发环境下打开开发者工具
     if (process.env.NODE_ENV === 'development') {
       mainWindow.webContents.openDevTools();
     }
@@ -38,86 +47,47 @@ function createWindow() {
     mainWindow = null;
   });
 
-  // 设置菜单
-  const template = [
-    {
-      label: '文件',
-      submenu: [
-        {
-          label: '退出',
-          accelerator: 'CmdOrCtrl+Q',
-          click: () => {
-            app.quit();
-          }
-        }
-      ]
-    },
-    {
-      label: '视图',
-      submenu: [
-        {
-          label: '重新加载',
-          accelerator: 'CmdOrCtrl+R',
-          click: () => {
-            mainWindow.reload();
-          }
-        },
-        {
-          label: '切换全屏',
-          accelerator: 'F11',
-          click: () => {
-            mainWindow.setFullScreen(!mainWindow.isFullScreen());
-          }
-        },
-        {
-          label: '开发者工具',
-          accelerator: 'F12',
-          click: () => {
-            mainWindow.webContents.toggleDevTools();
-          }
-        }
-      ]
-    },
-    {
-      label: '帮助',
-      submenu: [
-        {
-          label: '关于',
-          click: () => {
-            const { dialog } = require('electron');
-            dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: '关于鱼群模拟器',
-              message: '鱼群模拟器 v1.0.0',
-              detail: '基于Three.js和WebGL的鱼群行为模拟\n\n操作说明：\n- 鼠标移动：影响鱼群行为\n- 拖拽：旋转视角\n- 滚轮：缩放\n- F11：全屏\n- F12：开发者工具'
-            });
-          }
-        }
-      ]
+  // 处理窗口关闭事件
+  mainWindow.on('close', (event) => {
+    // 在macOS上，应用通常保持激活状态直到用户明确退出
+    if (process.platform !== 'darwin') {
+      app.quit();
     }
-  ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
+  });
 }
 
-// 当 Electron 完成初始化并准备创建浏览器窗口时调用此方法
+// 当Electron完成初始化并准备创建浏览器窗口时调用此方法
 app.whenReady().then(createWindow);
 
-// 当所有窗口都关闭时退出应用
+// 当所有窗口都被关闭时退出应用
 app.on('window-all-closed', () => {
-  // 在 macOS 上，应用和菜单栏通常会保持活跃状态，直到用户使用 Cmd + Q 退出
+  // 在macOS上，应用通常保持激活状态直到用户明确退出
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
 app.on('activate', () => {
-  // 在 macOS 上，当点击 dock 图标并且没有其他窗口打开时，通常会在应用中重新创建一个窗口
+  // 在macOS上，当点击dock图标且没有其他窗口打开时，重新创建窗口
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
 });
 
-// 在这个文件中，你可以包含应用其余特定的主进程代码
-// 也可以将它们放在单独的文件中并在这里引入
+// 安全设置：防止新窗口创建
+app.on('web-contents-created', (event, contents) => {
+  contents.on('new-window', (event, navigationUrl) => {
+    event.preventDefault();
+  });
+});
+
+// 处理证书错误
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  // 对于本地文件，忽略证书错误
+  if (url.startsWith('file://')) {
+    event.preventDefault();
+    callback(true);
+  } else {
+    callback(false);
+  }
+});

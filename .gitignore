@@ -3,6 +3,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # 构建输出
 dist/
@@ -16,6 +18,22 @@ out/
 .env.test.local
 .env.production.local
 
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
 # 日志文件
 *.log
 logs/
@@ -25,68 +43,33 @@ logs/
 *.seed
 *.pid.lock
 
-# 覆盖率报告
+# 覆盖率目录
 coverage/
-.nyc_output/
+*.lcov
+
+# nyc 测试覆盖率
+.nyc_output
 
 # 依赖锁定文件（可选，根据团队偏好）
 # package-lock.json
 # yarn.lock
 
-# IDE 和编辑器文件
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# 操作系统生成的文件
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Electron 构建文件
-app/
-release/
-*.dmg
-*.exe
-*.deb
-*.rpm
-*.AppImage
-
 # 临时文件
-tmp/
-temp/
-
-# 备份文件
-*.bak
-*.backup
-*.old
-
-# 测试文件
-test-results/
-playwright-report/
-test-results.xml
-
-# Vercel 部署文件
-.vercel/
-
-# Python 相关（如果使用 Python 服务器）
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# 媒体文件缓存
 *.tmp
 *.temp
+
+# 缓存目录
+.cache/
+.parcel-cache/
+
+# 字体子集化临时文件
+font_subset.py
+font-subset.txt
+
+# 部署相关
+.vercel/
+.vercelignore
+
+# 其他
+*.tgz
+*.tar.gz

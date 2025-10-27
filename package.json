@@ -1,76 +1,92 @@
 {
-  "name": "fish-flocking-simulation",
+  "name": "distortion-scroll-electron",
+  "private": true,
   "version": "1.0.0",
-  "description": "基于Three.js的鱼群模拟项目，使用GPU计算实现群体行为",
+  "description": "DistortionScroll - 诗意变形效果桌面应用",
   "main": "main.js",
+  "type": "module",
   "scripts": {
-    "start": "python3 server.py",
-    "start:node": "npx http-server -p 8000 --cors",
-    "start:python": "python3 server.py",
-    "start:auto": "./start.sh",
-    "start:advanced": "./start-advanced.sh",
-    "start:port": "echo 'Usage: npm run start:port -- 8080' && ./start-advanced.sh",
-    "dev": "python3 server.py",
-    "test": "echo '测试页面: http://localhost:8000/test.html' && python3 server.py",
-    "kill:ports": "lsof -ti:8000,8001,8002,8003,8004,8005,8006,8007,8008,8009 | xargs kill -9 2>/dev/null || echo 'No processes found on ports 8000-8009'",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
     "electron": "electron .",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "dist": "electron-builder --publish=never",
-    "vercel:deploy": "vercel --prod",
-    "vercel:preview": "vercel",
-    "vercel:build": "echo 'Vercel 将自动构建静态文件'",
-    "web:start": "npx http-server -p 3000 --cors -o"
+    "electron-dev": "npm run build && electron .",
+    "build-electron": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --publish=never",
+    "pack": "npm run build && electron-builder --dir"
   },
-  "keywords": [
-    "threejs",
-    "webgl",
-    "flocking",
-    "simulation",
-    "gpu",
-    "fish",
-    "animation"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
   "devDependencies": {
-    "http-server": "^14.1.1",
+    "@types/dat.gui": "^0.7.7",
+    "@types/three": "^0.144.0",
+    "typescript": "^4.6.4",
+    "vite": "^3.1.0"
+  },
+  "dependencies": {
+    "@studio-freight/lenis": "^1.0.19",
+    "dat.gui": "^0.7.9",
+    "glsl-curl-noise": "^0.0.4",
+    "glsl-curl-noise2": "^0.0.4",
+    "glsl-noise": "^0.0.0",
+    "glslify": "^7.1.1",
+    "gsap": "^3.11.2",
+    "three": "^0.145.0"
+  },
+  "devDependencies": {
+    "@types/dat.gui": "^0.7.7",
+    "@types/three": "^0.144.0",
+    "typescript": "^4.6.4",
+    "vite": "^3.1.0",
     "electron": "^28.0.0",
-    "electron-builder": "^24.6.4"
+    "electron-builder": "^24.0.0"
   },
   "build": {
-    "appId": "com.yourcompany.fish-flocking",
-    "productName": "鱼群模拟器",
+    "appId": "com.distortionscroll.app",
+    "productName": "DistortionScroll",
     "directories": {
-      "output": "dist"
+      "output": "electron-dist"
     },
     "files": [
-      "index.html",
-      "public/**/*",
+      "dist/**/*",
       "main.js",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "dist/",
+        "to": "dist/",
+        "filter": ["**/*"]
+      }
+    ],
     "win": {
-      "target": "portable",
-      "icon": "public/vite.svg",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "dist/favicon/favicon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
     "mac": {
       "target": "dmg",
-      "icon": "public/vite.svg"
+      "icon": "dist/favicon/favicon.ico",
+      "category": "public.app-category.graphics-design"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "dist/favicon/favicon.ico",
+      "category": "Graphics"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DistortionScroll"
     }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/fish-flocking-simulation.git"
-  },
-  "bugs": {
-    "url": "https://github.com/yourusername/fish-flocking-simulation/issues"
-  },
-  "homepage": "https://github.com/yourusername/fish-flocking-simulation#readme"
+  }
 }
