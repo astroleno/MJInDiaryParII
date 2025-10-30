@@ -1,28 +1,19 @@
 {
-  "rewrites": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/fonts/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
+      "src": "index.html",
+      "use": "@vercel/static"
     },
     {
-      "source": "/assets/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
+      "src": "sardine.glb",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/((?!sardine\\.glb).*)",
+      "dest": "/index.html"
     }
   ]
 }

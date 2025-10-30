@@ -1,38 +1,1200 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <!-- Favicon设置 -->
-    <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DistortionScroll</title>
-    <link rel="stylesheet" href="src/stylesheet/reset.css" />
-    <link rel="stylesheet" href="src/stylesheet/index.css" />
-  </head>
-  <body>
-    <main>
-      <section id="sec01" class="sec">
-        <h2>是薄雾轻拥岸线的清晨<br/>湿润着咸风与微光</h2>
-      </section>
-      <section id="sec02" class="sec">
-        <h2>是晨曦浸透岛屿的轮廓<br/>海面溢出第一抹金黄</h2>
-      </section>
-      <section id="sec03" class="sec">
-        <h2>是船影缓缓枕着暮色<br/>衔去不言的归航</h2>
-      </section>
-      <section id="sec04" class="sec">
-        <h2>是云被晚霞揉进柔粉的梦里<br/>赤阳也逃进远洋</h2>
-      </section>
-      <section id="sec05" class="sec">
-        <h2>是椰林上的星河闪烁<br/>人声渐远，只剩浪花回响</h2>
-      </section>
-      <section id="sec06" class="sec">
-        <h2>是银河铺开的夜<br/>万物都安静得恰当</h2>
-      </section>
-    </main>
-    <div id="canvas"></div>
-    <script type="module" src="/src/script/index.js"></script>
-  </body>
+	<head>
+		<title>InDiary Part II</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<!-- <link type="text/css" rel="stylesheet" href="main.css"> -->
+		<style>
+			body {
+				/* MODIFICATION: Updated background color for a darker theme */
+				background-color: #000;
+				color: #eee;
+			}
+			a {
+				color:#5af;
+			}
+		</style>
+	</head>
+	<body>
+
+
+		<!-- shader for bird's position -->
+		<script id="fragmentShaderPosition" type="x-shader/x-fragment">
+
+			uniform float time;
+			uniform float delta;
+
+			void main()	{
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+				vec4 tmpPos = texture2D( texturePosition, uv );
+				vec3 position = tmpPos.xyz;
+				vec3 velocity = texture2D( textureVelocity, uv ).xyz;
+
+				float phase = tmpPos.w;
+
+				phase = mod( ( phase + delta +
+					length( velocity.xz ) * delta * 3. +
+					max( velocity.y, 0.0 ) * delta * 6. ), 62.83 );
+
+				gl_FragColor = vec4( position + velocity * delta * 15. , phase );
+
+			}
+
+		</script>
+
+		<!-- 太阳扭曲效果Shader -->
+		<script id="sunDistortionVertexShader" type="x-shader/x-vertex">
+			varying vec2 vUv;
+			void main() {
+				vUv = uv;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+			}
+		</script>
+
+		<script id="sunDistortionFragmentShader" type="x-shader/x-fragment">
+			uniform float time;
+			uniform float strength;
+			uniform float radius;
+			uniform float speed;
+			uniform sampler2D tDiffuse; // 背景纹理
+			varying vec2 vUv;
+
+			// 简单的噪声函数
+			float hash(vec2 p) {
+				return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+			}
+			
+			float noise(vec2 p) {
+				vec2 i = floor(p);
+				vec2 f = fract(p);
+				vec2 u = f * f * (3.0 - 2.0 * f);
+				
+				return mix(
+					mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+					mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+					u.y
+				);
+			}
+			
+			float fbm(vec2 p) {
+				float value = 0.0;
+				float amplitude = 0.5;
+				for(int i = 0; i < 4; i++) {
+					value += amplitude * noise(p);
+					p *= 2.0;
+					amplitude *= 0.5;
+				}
+				return value;
+			}
+
+				void main() {
+					vec2 uv = vUv;
+					vec2 center = vec2(0.5, 0.5);
+					vec2 toCenter = uv - center;
+					float dist = length(toCenter);
+					float radiusValue = max(radius, 0.001);
+					
+					float effectMask = smoothstep(radiusValue + 0.18, radiusValue - 0.02, dist);
+					effectMask = clamp(effectMask, 0.0, 1.0);
+					
+					vec2 dir = normalize(toCenter + vec2(1e-5));
+					vec2 tangent = vec2(-dir.y, dir.x);
+					
+					float radialNoise = fbm(toCenter * 35.0 + time * speed * 0.35);
+					float angularNoise = fbm(dir * 16.0 + time * speed * 0.22);
+					float microNoise = fbm(toCenter * 75.0 + time * speed * 0.6);
+					
+					float radialOffsetAmt = (radialNoise - 0.5) * 0.28;
+					float angularOffsetAmt = (angularNoise - 0.5) * 0.45;
+					float microOffsetAmt = (microNoise - 0.5) * 0.18;
+					
+					vec2 distortion = dir * radialOffsetAmt + tangent * angularOffsetAmt;
+					distortion += dir * microOffsetAmt;
+					distortion *= strength * effectMask;
+					
+					vec2 warped = toCenter + distortion;
+					float radialScale = clamp(1.0 + (microNoise - 0.5) * 0.25 * strength, 0.75, 1.25);
+					warped *= radialScale;
+					vec2 distortedUv = center + warped;
+					distortedUv = clamp(distortedUv, vec2(0.001), vec2(0.999));
+					
+					vec4 background = texture2D(tDiffuse, distortedUv);
+					
+					float core = smoothstep(radiusValue * 0.2, radiusValue * 0.78, dist);
+					float glow = smoothstep(radiusValue, radiusValue + 0.12, dist);
+					float falloff = (1.0 - core) * (1.0 - glow * 0.8) * effectMask;
+					falloff = clamp(falloff, 0.0, 1.0);
+					
+					vec3 highlight = background.rgb + vec3(0.85, 0.92, 1.0) * (falloff * 0.45);
+					gl_FragColor = vec4(highlight, falloff * 0.85);
+				}
+			</script>
+
+		<!-- shader for bird's velocity -->
+		<script id="fragmentShaderVelocity" type="x-shader/x-fragment">
+
+			uniform float time;
+			uniform float testing;
+			uniform float delta; // about 0.016
+			uniform float separationDistance; // 20
+			uniform float alignmentDistance; // 40
+			uniform float cohesionDistance; //
+			uniform float freedomFactor;
+			uniform vec3 predator;
+
+			const float width = resolution.x;
+			const float height = resolution.y;
+
+			const float PI = 3.141592653589793;
+			const float PI_2 = PI * 2.0;
+			// const float VISION = PI * 0.55;
+
+			float zoneRadius = 40.0;
+			float zoneRadiusSquared = 1600.0;
+
+			float separationThresh = 0.45;
+			float alignmentThresh = 0.65;
+
+			const float UPPER_BOUNDS = BOUNDS;
+			const float LOWER_BOUNDS = -UPPER_BOUNDS;
+
+			const float SPEED_LIMIT = 9.0;
+
+			float rand( vec2 co ){
+				return fract( sin( dot( co.xy, vec2(12.9898,78.233) ) ) * 43758.5453 );
+			}
+
+			void main() {
+
+				zoneRadius = separationDistance + alignmentDistance + cohesionDistance;
+				separationThresh = separationDistance / zoneRadius;
+				alignmentThresh = ( separationDistance + alignmentDistance ) / zoneRadius;
+				zoneRadiusSquared = zoneRadius * zoneRadius;
+
+
+				vec2 uv = gl_FragCoord.xy / resolution.xy;
+				vec3 birdPosition, birdVelocity;
+
+				vec3 selfPosition = texture2D( texturePosition, uv ).xyz;
+				vec3 selfVelocity = texture2D( textureVelocity, uv ).xyz;
+
+				float dist;
+				vec3 dir; // direction
+				float distSquared;
+
+				float separationSquared = separationDistance * separationDistance;
+				float cohesionSquared = cohesionDistance * cohesionDistance;
+
+				float f;
+				float percent;
+
+				vec3 velocity = selfVelocity;
+
+				float limit = SPEED_LIMIT;
+
+				dir = predator * UPPER_BOUNDS - selfPosition;
+				dir.z = 0.;
+				// dir.z *= 0.6;
+				dist = length( dir );
+				distSquared = dist * dist;
+
+				float preyRadius = 150.0;
+				float preyRadiusSq = preyRadius * preyRadius;
+
+
+				// move birds away from predator
+				if ( dist < preyRadius ) {
+
+					f = ( distSquared / preyRadiusSq - 1.0 ) * delta * 100.;
+					velocity += normalize( dir ) * f;
+					limit += 5.0;
+				}
+
+
+				// if (testing == 0.0) {}
+				// if ( rand( uv + time ) < freedomFactor ) {}
+
+
+				// Attract flocks to the center
+				vec3 central = vec3( 0., 0., 0. );
+				dir = selfPosition - central;
+				dist = length( dir );
+
+				dir.y *= 2.5;
+				velocity -= normalize( dir ) * delta * 5.;
+
+				// MODIFICATION: Add a tangential force to create a gentle rotation around the center
+				vec3 tangent = cross(normalize(dir), vec3(0.0, 1.0, 0.0)); // Perpendicular vector for horizontal rotation
+				velocity += normalize(tangent) * delta * 2.0;
+
+
+				for ( float y = 0.0; y < height; y++ ) {
+					for ( float x = 0.0; x < width; x++ ) {
+
+						vec2 ref = vec2( x + 0.5, y + 0.5 ) / resolution.xy;
+						birdPosition = texture2D( texturePosition, ref ).xyz;
+
+						dir = birdPosition - selfPosition;
+						dist = length( dir );
+
+						if ( dist < 0.0001 ) continue;
+
+						distSquared = dist * dist;
+
+						if ( distSquared > zoneRadiusSquared ) continue;
+
+						percent = distSquared / zoneRadiusSquared;
+
+						if ( percent < separationThresh ) { // low
+
+							// Separation - Move apart for comfort
+							f = ( separationThresh / percent - 1.0 ) * delta;
+							velocity -= normalize( dir ) * f;
+
+						} else if ( percent < alignmentThresh ) { // high
+
+							// Alignment - fly the same direction
+							float threshDelta = alignmentThresh - separationThresh;
+							float adjustedPercent = ( percent - separationThresh ) / threshDelta;
+
+							birdVelocity = texture2D( textureVelocity, ref ).xyz;
+
+							f = ( 0.5 - cos( adjustedPercent * PI_2 ) * 0.5 + 0.5 ) * delta;
+							velocity += normalize( birdVelocity ) * f;
+
+						} else {
+
+							// Attraction / Cohesion - move closer
+							float threshDelta = 1.0 - alignmentThresh;
+							float adjustedPercent;
+							if( threshDelta == 0. ) adjustedPercent = 1.;
+							else adjustedPercent = ( percent - alignmentThresh ) / threshDelta;
+
+							f = ( 0.5 - ( cos( adjustedPercent * PI_2 ) * -0.5 + 0.5 ) ) * delta;
+
+							velocity += normalize( dir ) * f;
+
+						}
+
+					}
+
+				}
+
+				// this make tends to fly around than down or up
+				// if (velocity.y > 0.) velocity.y *= (1. - 0.2 * delta);
+
+				// Speed Limits
+				if ( length( velocity ) > limit ) {
+					velocity = normalize( velocity ) * limit;
+				}
+
+				gl_FragColor = vec4( velocity, 1.0 );
+
+			}
+
+		</script>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+					"three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
+			// MODIFICATION: Import OrbitControls for camera interaction
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			// MODIFICATION: Import Sky shader for realistic sun and atmosphere
+			import { Sky } from 'three/addons/objects/Sky.js';
+			import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+			/* TEXTURE WIDTH FOR SIMULATION */
+			const WIDTH = 42; // 减少鱼群数量到42x42
+			const BIRDS = WIDTH * WIDTH;
+
+			// 测试sardine模型
+			const MODEL_PATH = '/sardine.glb'; // 使用绝对路径
+
+			/* BAKE ANIMATION INTO TEXTURE and CREATE GEOMETRY FROM BASE MODEL */
+			const BirdGeometry = new THREE.BufferGeometry();
+			let textureAnimation, durationAnimation, birdMesh, materialShader, indicesPerBird;
+
+			function nextPowerOf2( n ) {
+
+				return Math.pow( 2, Math.ceil( Math.log( n ) / Math.log( 2 ) ) );
+
+			}
+
+			Math.lerp = function ( value1, value2, amount ) {
+
+				amount = Math.max( Math.min( amount, 1 ), 0 );
+				return value1 + ( value2 - value1 ) * amount;
+
+			};
+
+			// 创建备用几何体（当模型加载失败时使用）
+			function createFallbackGeometry() {
+				console.log('创建备用几何体...');
+				
+				// 创建一个简单的鱼形状几何体
+				const geometry = new THREE.ConeGeometry(1, 3, 8);
+				
+				// 设置几何体属性
+				BirdGeometry.copy(geometry);
+				
+				// 创建颜色属性
+				const positionCount = geometry.getAttribute('position').count;
+				const colorArray = new Float32Array(positionCount * 3);
+				for (let i = 0; i < positionCount; i++) {
+					colorArray[i * 3] = 0.3;     // R
+					colorArray[i * 3 + 1] = 0.6; // G  
+					colorArray[i * 3 + 2] = 0.9; // B
+				}
+				
+				BirdGeometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+				BirdGeometry.setAttribute('birdColor', new THREE.BufferAttribute(colorArray, 3));
+				
+				// 设置参考和种子属性
+				const reference = [], seeds = [];
+				for (let i = 0; i < positionCount * BIRDS; i++) {
+					const bIndex = i % positionCount;
+					const bird = Math.floor(i / positionCount);
+					const j = ~~bird;
+					const x = (j % WIDTH) / WIDTH;
+					const y = ~~(j / WIDTH) / WIDTH;
+					reference.push(x, y, 0, 1);
+					seeds.push(bird, Math.random(), Math.random(), Math.random());
+				}
+				
+				BirdGeometry.setAttribute('reference', new THREE.BufferAttribute(new Float32Array(reference), 4));
+				BirdGeometry.setAttribute('seeds', new THREE.BufferAttribute(new Float32Array(seeds), 4));
+				
+				// 创建静态动画纹理
+				const tHeight = 64;
+				const tWidth = 64;
+				const tData = new Float32Array(4 * tWidth * tHeight);
+				
+				// 填充静态位置数据
+				for (let i = 0; i < tWidth; i++) {
+					for (let j = 0; j < tHeight; j++) {
+						const offset = j * tWidth * 4;
+						if (i < positionCount) {
+							const pos = geometry.getAttribute('position');
+							tData[offset + i * 4] = pos.array[i * 3];
+							tData[offset + i * 4 + 1] = pos.array[i * 3 + 1];
+							tData[offset + i * 4 + 2] = pos.array[i * 3 + 2];
+							tData[offset + i * 4 + 3] = 1;
+						}
+					}
+				}
+				
+				textureAnimation = new THREE.DataTexture(tData, tWidth, tHeight, THREE.RGBAFormat, THREE.FloatType);
+				textureAnimation.needsUpdate = true;
+				
+				indicesPerBird = geometry.index.count;
+				durationAnimation = 60;
+				
+				init();
+			}
+
+			new GLTFLoader().load( MODEL_PATH, function ( gltf ) {
+
+				console.log('模型加载成功:', gltf);
+				window.gltfData = gltf; // 保存到全局变量
+				
+				const animations = gltf.animations;
+				durationAnimation = Math.round( animations[ 0 ].duration * 60 );
+				const birdGeo = gltf.scene.children[ 0 ].geometry;
+				
+				// 检查是否有morph attributes
+				const morphAttributes = birdGeo.morphAttributes ? birdGeo.morphAttributes.position : null;
+				
+				console.log('模型几何体信息:', {
+					hasMorphAttributes: !!morphAttributes,
+					morphCount: morphAttributes ? morphAttributes.length : 0,
+					vertexCount: birdGeo.getAttribute('position').count,
+					hasColor: !!birdGeo.getAttribute('color')
+				});
+				const tHeight = nextPowerOf2( durationAnimation );
+				const tWidth = nextPowerOf2( birdGeo.getAttribute( 'position' ).count );
+				indicesPerBird = birdGeo.index.count;
+				const tData = new Float32Array( 4 * tWidth * tHeight );
+
+				// 处理morph attributes或使用静态位置
+				if ( morphAttributes && morphAttributes.length > 0 ) {
+					console.log('使用morph attributes创建动画纹理');
+					
+					for ( let i = 0; i < tWidth; i ++ ) {
+
+						for ( let j = 0; j < tHeight; j ++ ) {
+
+							const offset = j * tWidth * 4;
+
+							const curMorph = Math.floor( j / durationAnimation * morphAttributes.length );
+							const nextMorph = ( Math.floor( j / durationAnimation * morphAttributes.length ) + 1 ) % morphAttributes.length;
+							const lerpAmount = j / durationAnimation * morphAttributes.length % 1;
+
+							if ( j < durationAnimation ) {
+
+								let d0, d1;
+
+								d0 = morphAttributes[ curMorph ].array[ i * 3 ];
+								d1 = morphAttributes[ nextMorph ].array[ i * 3 ];
+
+								if ( d0 !== undefined && d1 !== undefined ) tData[ offset + i * 4 ] = Math.lerp( d0, d1, lerpAmount );
+
+								d0 = morphAttributes[ curMorph ].array[ i * 3 + 1 ];
+								d1 = morphAttributes[ nextMorph ].array[ i * 3 + 1 ];
+
+								if ( d0 !== undefined && d1 !== undefined ) tData[ offset + i * 4 + 1 ] = Math.lerp( d0, d1, lerpAmount );
+
+								d0 = morphAttributes[ curMorph ].array[ i * 3 + 2 ];
+								d1 = morphAttributes[ nextMorph ].array[ i * 3 + 2 ];
+
+								if ( d0 !== undefined && d1 !== undefined ) tData[ offset + i * 4 + 2 ] = Math.lerp( d0, d1, lerpAmount );
+
+								tData[ offset + i * 4 + 3 ] = 1;
+
+							}
+
+						}
+
+					}
+				} else {
+					console.log('没有morph attributes，使用静态位置数据');
+					
+					// 使用静态位置数据填充纹理
+					const positionAttribute = birdGeo.getAttribute('position');
+					for ( let i = 0; i < tWidth; i ++ ) {
+						for ( let j = 0; j < tHeight; j ++ ) {
+							const offset = j * tWidth * 4;
+							if ( i < positionAttribute.count ) {
+								tData[ offset + i * 4 ] = positionAttribute.array[ i * 3 ];
+								tData[ offset + i * 4 + 1 ] = positionAttribute.array[ i * 3 + 1 ];
+								tData[ offset + i * 4 + 2 ] = positionAttribute.array[ i * 3 + 2 ];
+								tData[ offset + i * 4 + 3 ] = 1;
+							}
+						}
+					}
+				}
+
+				textureAnimation = new THREE.DataTexture( tData, tWidth, tHeight, THREE.RGBAFormat, THREE.FloatType );
+				textureAnimation.needsUpdate = true;
+
+				const reference = [], seeds = [], indices = [];
+				const positionAttribute = birdGeo.getAttribute( 'position' );
+				const normalAttribute = birdGeo.getAttribute( 'normal' );
+				const uvAttribute = birdGeo.getAttribute( 'uv' );
+				const colorAttribute = birdGeo.getAttribute( 'color' );
+				const hasVertexColors = !!colorAttribute;
+				const vertexCount = positionAttribute.count;
+				const totalVertices = vertexCount * BIRDS;
+				const positionArray = new Float32Array( totalVertices * 3 );
+				const colorArray = new Float32Array( totalVertices * 3 );
+				const normalArray = normalAttribute ? new Float32Array( totalVertices * 3 ) : null;
+				const uvArray = uvAttribute ? new Float32Array( totalVertices * 2 ) : null;
+				const defaultColor = [ 1.0, 1.0, 1.0 ];
+
+				console.log('颜色与贴图属性检查:', {
+					hasColorAttribute: !!colorAttribute,
+					hasNormalAttribute: !!normalAttribute,
+					hasUvAttribute: !!uvAttribute
+				});
+
+				for ( let birdIndex = 0; birdIndex < BIRDS; birdIndex ++ ) {
+
+					for ( let v = 0; v < vertexCount; v ++ ) {
+
+						const dstVertexIndex = birdIndex * vertexCount + v;
+						const dstPosOffset = dstVertexIndex * 3;
+						const srcPosOffset = v * 3;
+
+						positionArray[ dstPosOffset ] = positionAttribute.array[ srcPosOffset ];
+						positionArray[ dstPosOffset + 1 ] = positionAttribute.array[ srcPosOffset + 1 ];
+						positionArray[ dstPosOffset + 2 ] = positionAttribute.array[ srcPosOffset + 2 ];
+
+						for ( let c = 0; c < 3; c ++ ) {
+							if ( hasVertexColors && c < colorAttribute.itemSize ) {
+								colorArray[ dstPosOffset + c ] = colorAttribute.array[ v * colorAttribute.itemSize + c ];
+							} else {
+								colorArray[ dstPosOffset + c ] = defaultColor[ c ];
+							}
+						}
+
+						if ( normalArray ) {
+							normalArray[ dstPosOffset ] = normalAttribute.array[ srcPosOffset ];
+							normalArray[ dstPosOffset + 1 ] = normalAttribute.array[ srcPosOffset + 1 ];
+							normalArray[ dstPosOffset + 2 ] = normalAttribute.array[ srcPosOffset + 2 ];
+						}
+
+						if ( uvArray ) {
+							const srcUvOffset = v * uvAttribute.itemSize;
+							const dstUvOffset = dstVertexIndex * 2;
+							uvArray[ dstUvOffset ] = uvAttribute.array[ srcUvOffset ];
+							uvArray[ dstUvOffset + 1 ] = uvAttribute.array[ srcUvOffset + 1 ];
+						}
+
+					}
+
+				}
+
+				let r = Math.random();
+				for ( let i = 0; i < vertexCount * BIRDS; i ++ ) {
+
+					const bIndex = i % vertexCount;
+					const bird = Math.floor( i / vertexCount );
+					if ( bIndex == 0 ) r = Math.random();
+					const j = ~ ~ bird;
+					const x = ( j % WIDTH ) / WIDTH;
+					const y = ~ ~ ( j / WIDTH ) / WIDTH;
+					reference.push( x, y, bIndex / tWidth, durationAnimation / tHeight );
+					seeds.push( bird, r, Math.random(), Math.random() );
+
+				}
+
+				for ( let i = 0; i < birdGeo.index.array.length * BIRDS; i ++ ) {
+
+					const offset = Math.floor( i / birdGeo.index.array.length ) * vertexCount;
+					indices.push( birdGeo.index.array[ i % birdGeo.index.array.length ] + offset );
+
+				}
+
+				BirdGeometry.setAttribute( 'position', new THREE.BufferAttribute( positionArray, 3 ) );
+				if ( normalArray ) {
+					BirdGeometry.setAttribute( 'normal', new THREE.BufferAttribute( normalArray, 3 ) );
+				}
+				if ( uvArray ) {
+					BirdGeometry.setAttribute( 'uv', new THREE.BufferAttribute( uvArray, 2 ) );
+				}
+				const birdColorAttribute = new THREE.BufferAttribute( colorArray, 3 );
+				BirdGeometry.setAttribute( 'birdColor', birdColorAttribute );
+				if ( hasVertexColors ) {
+					BirdGeometry.setAttribute( 'color', birdColorAttribute.clone() );
+				} else {
+					BirdGeometry.deleteAttribute( 'color' );
+				}
+				BirdGeometry.setAttribute( 'reference', new THREE.BufferAttribute( new Float32Array( reference ), 4 ) );
+				BirdGeometry.setAttribute( 'seeds', new THREE.BufferAttribute( new Float32Array( seeds ), 4 ) );
+
+				BirdGeometry.setIndex( indices );
+				BirdGeometry.userData.hasVertexColors = hasVertexColors;
+
+				init();
+
+			} );
+
+			let container, stats;
+			let camera, scene, renderer, controls; // MODIFICATION: Added 'controls'
+			let mouseX = 0, mouseY = 0;
+
+			let windowHalfX = window.innerWidth / 2;
+			let windowHalfY = window.innerHeight / 2;
+
+			const BOUNDS = 800, BOUNDS_HALF = BOUNDS / 2;
+
+			let last = performance.now();
+
+			let gpuCompute;
+			let velocityVariable;
+			let positionVariable;
+			let positionUniforms;
+			let velocityUniforms;
+
+			// MODIFICATION: Set scene colors
+			const UNDERWATER_COLOR = 0x00102A; // A deep blue color
+
+			// 太阳扭曲效果相关变量
+			let sunDistortionSprite = null;
+			let sunDistortionMaterial = null;
+			let renderTarget = null;
+			let backgroundScene = null;
+			let backgroundCamera = null;
+
+			// 创建太阳扭曲效果函数
+			function createSunDistortion(sunPosition) {
+				// 创建RenderTarget用于捕获背景
+				renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+				
+				// 获取Shader代码
+				const vertexShader = document.getElementById('sunDistortionVertexShader').textContent;
+				const fragmentShader = document.getElementById('sunDistortionFragmentShader').textContent;
+
+				// 创建扭曲材质
+					sunDistortionMaterial = new THREE.ShaderMaterial({
+						vertexShader: vertexShader,
+						fragmentShader: fragmentShader,
+						uniforms: {
+							time: { value: 0 },
+							strength: { value: 0.8 }, // 增强扭曲强度，更接近Aurelia效果
+							radius: { value: 0.4 },   // 扩大焦散影响半径，增强水下感
+							speed: { value: 1.5 },    // 增加动画速度，更动态
+							tDiffuse: { value: null } // 背景纹理
+						},
+						transparent: true, // 透明，让扭曲效果可见
+						blending: THREE.NormalBlending,
+						side: THREE.DoubleSide // 双面渲染，确保相机在水下往上看时能看到
+					});
+
+					// 创建扭曲平面，覆盖太阳附近区域
+					const distortionGeometry = new THREE.PlaneGeometry(2200, 2200);
+					sunDistortionSprite = new THREE.Mesh(distortionGeometry, sunDistortionMaterial);
+					sunDistortionSprite.position.set(0, 500, 0); // 放在太阳附近，不要随便改位置
+					sunDistortionSprite.rotation.x = -Math.PI / 2; // 初始朝向，稍后在渲染时对齐相机
+					sunDistortionSprite.renderOrder = -10; // 更低的渲染顺序，确保在鱼群前面
+					sunDistortionSprite.frustumCulled = false; // 始终保留在视锥内
+					sunDistortionMaterial.depthWrite = false;
+
+					// 添加到场景
+					scene.add(sunDistortionSprite);
+
+				console.log('太阳扭曲效果已创建');
+			}
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 3000 );
+				// 调整相机位置和角度，让它正对着90度高度的太阳
+				camera.position.set( 0, -300, 0 ); // 相机在下方
+				camera.lookAt( 0, 500, 0 ); // 相机向上看太阳位置
+
+				scene = new THREE.Scene();
+				
+				// 添加水下体积雾效果 - 增强Aurelia风格
+				scene.fog = new THREE.FogExp2(0x001122, 0.0008); // 深蓝色雾效，模拟水下浑浊感
+				
+				// 使用 Sky Shader 创建水下天空效果
+				const sky = new Sky();
+				sky.scale.setScalar(100000); // 减小缩放，让天空变化更明显
+				scene.add(sky);
+
+				// 设置太阳位置 - 在水面上方
+				const sun = new THREE.Vector3();
+				sun.setFromSphericalCoords(1, Math.PI/4, Math.PI/2); // 调整角度让太阳在水面上方
+				
+				// 调整天空参数，模拟水下环境 - 增强Aurelia风格效果
+				const skyUniforms = sky.material.uniforms;
+				skyUniforms.turbidity.value = 25; // 增加浑浊度，创造更真实的水下浑浊感
+				skyUniforms.rayleigh.value = 0.1; // 大幅减少瑞利散射，降低对比度
+				skyUniforms.mieCoefficient.value = 0.15; // 增加米氏散射，增强水下光效
+				skyUniforms.mieDirectionalG.value = 0.995; // 调整光晕形状，更接近水下效果
+				skyUniforms.sunPosition.value.copy(sun);
+
+				// 创建太阳扭曲效果
+				createSunDistortion(sun);
+				
+				// 存储太阳位置，用于后续更新
+				window.sunPosition = sun;
+
+				// 增强环境光，让鱼群可见 - 优化为Aurelia风格水下光照
+				const hemiLight = new THREE.HemisphereLight( 0x4a7bb8, 0x001122, 1.5 ); // 调整颜色，更符合水下环境
+				scene.add( hemiLight );
+
+				// 添加环境光和补光，模拟水下散射 - 增强Aurelia风格
+				const ambientLight = new THREE.AmbientLight( 0x2a5a90, 0.8 ); // 调整强度，避免过亮
+				scene.add( ambientLight );
+				
+				// 添加额外的环境光，专门改善鱼群暗部 - 优化颜色
+				const additionalAmbient = new THREE.AmbientLight( 0x4a7bb8, 0.4 ); // 调整强度
+				scene.add( additionalAmbient );
+
+				const fillLight = new THREE.DirectionalLight( 0x4aa7ff, 1.1 );
+				fillLight.position.set( 140, -180, 160 );
+				fillLight.target.position.set( 0, 0, 0 );
+				scene.add( fillLight );
+				scene.add( fillLight.target );
+
+				// 添加方向光，模拟太阳光照
+				const dirLight = new THREE.DirectionalLight( 0xFFFFFF, 2.0 );
+				dirLight.position.set( -120, 520, 220 );
+				dirLight.target.position.set( 0, 120, -40 );
+				scene.add( dirLight );
+				scene.add( dirLight.target );
+				
+				// 添加额外的点光源确保鱼群可见
+				const pointLight = new THREE.PointLight( 0x8fc7ff, 1.5, 1200 );
+				pointLight.position.set( 0, -80, 140 );
+				scene.add( pointLight );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.outputColorSpace = THREE.SRGBColorSpace;
+				// 设置渲染器色调映射 - 优化为水下环境
+				renderer.toneMapping = THREE.ACESFilmicToneMapping;
+				renderer.toneMappingExposure = 1.2; // 调整曝光，平衡水下效果和鱼群可见性
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				container.appendChild( renderer.domElement );
+
+				const pmremGenerator = new THREE.PMREMGenerator( renderer );
+				const environmentTexture = pmremGenerator.fromScene( new RoomEnvironment( renderer ), 0.04 ).texture;
+				scene.environment = environmentTexture;
+				pmremGenerator.dispose();
+
+				// MODIFICATION: Initialize OrbitControls
+				controls = new OrbitControls( camera, renderer.domElement );
+				controls.enableDamping = true;
+				controls.dampingFactor = 0.05;
+				controls.minDistance = 100;
+				controls.maxDistance = 1500;
+				// 设置控制目标，让相机默认看向太阳方向
+				controls.target.set( 0, 500, 0 ); // 目标指向太阳位置
+				controls.update();
+
+
+				initComputeRenderer();
+
+
+				container.style.touchAction = 'none';
+				container.addEventListener( 'pointermove', onPointerMove );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				// const gui = new GUI();
+
+				// 鱼群控制参数
+				const effectController = {
+
+					separation: 20.0,
+					alignment: 20.0,
+					cohesion: 20.0,
+					freedom: 0.75,
+					size: 20.0, // MODIFICATION: 设置默认大小为10.0 (放大100倍)
+					count: BIRDS
+
+				};
+
+				// 天空控制参数 - 调整以减少天空和地面差别
+					const skyController = {
+						turbidity: 20, // 增加浑浊度，柔化光线
+						rayleigh: 0.2, // 减少瑞利散射，降低对比度
+						mieCoefficient: 0.1, // 增加米氏散射
+						mieDirectionalG: 0.995, // 调整光晕形状
+						elevation: 90, // 略微倾斜太阳高度
+						azimuth: 0,  // 太阳方位角
+						exposure: 0.5 // 提升曝光，让整体更明亮
+					};
+
+				const valuesChanger = function () {
+
+					velocityUniforms[ 'separationDistance' ].value = effectController.separation;
+					velocityUniforms[ 'alignmentDistance' ].value = effectController.alignment;
+					velocityUniforms[ 'cohesionDistance' ].value = effectController.cohesion;
+					velocityUniforms[ 'freedomFactor' ].value = effectController.freedom;
+					if ( materialShader ) materialShader.uniforms[ 'size' ].value = effectController.size;
+					BirdGeometry.setDrawRange( 0, indicesPerBird * effectController.count );
+
+				};
+
+				// 天空参数更新函数
+				const skyChanger = function () {
+					const skyUniforms = sky.material.uniforms;
+					skyUniforms.turbidity.value = skyController.turbidity;
+					skyUniforms.rayleigh.value = skyController.rayleigh;
+					skyUniforms.mieCoefficient.value = skyController.mieCoefficient;
+					skyUniforms.mieDirectionalG.value = skyController.mieDirectionalG;
+
+					// 更新太阳位置
+					const phi = THREE.MathUtils.degToRad(90 - skyController.elevation);
+					const theta = THREE.MathUtils.degToRad(skyController.azimuth);
+					sun.setFromSphericalCoords(1, phi, theta);
+					skyUniforms.sunPosition.value.copy(sun);
+
+					// 更新曝光
+					renderer.toneMappingExposure = skyController.exposure;
+				};
+
+				valuesChanger();
+				skyChanger(); // 初始化天空参数
+
+				// 鱼群控制面板
+				// gui.add( effectController, 'separation', 0.0, 100.0, 1.0 ).onChange( valuesChanger );
+				// gui.add( effectController, 'alignment', 0.0, 100, 0.001 ).onChange( valuesChanger );
+				// gui.add( effectController, 'cohesion', 0.0, 100, 0.025 ).onChange( valuesChanger );
+				// gui.add( effectController, 'size', 0.1, 2, 0.01 ).onChange( valuesChanger );
+				// gui.add( effectController, 'count', 0, BIRDS, 1 ).onChange( valuesChanger );
+
+				// 天空控制面板
+				// const skyFolder = gui.addFolder('天空控制');
+				// skyFolder.add( skyController, 'turbidity', 0.0, 30.0, 0.1 ).onChange( skyChanger );
+				// skyFolder.add( skyController, 'rayleigh', 0.0, 10, 0.001 ).onChange( skyChanger );
+				// skyFolder.add( skyController, 'mieCoefficient', 0.0, 0.1, 0.001 ).onChange( skyChanger );
+				// skyFolder.add( skyController, 'mieDirectionalG', 0.0, 1, 0.001 ).onChange( skyChanger );
+				// skyFolder.add( skyController, 'elevation', 0, 90, 0.1 ).onChange( skyChanger );
+				// skyFolder.add( skyController, 'azimuth', -180, 180, 0.1 ).onChange( skyChanger );
+				// skyFolder.add( skyController, 'exposure', 0, 2, 0.001 ).onChange( skyChanger );
+				// skyFolder.open();
+
+				// gui.close();
+
+				initBirds( effectController );
+
+			}
+
+			function initComputeRenderer() {
+
+				gpuCompute = new GPUComputationRenderer( WIDTH, WIDTH, renderer );
+
+				if ( renderer.capabilities.isWebGL2 === false ) {
+
+					gpuCompute.setDataType( THREE.HalfFloatType );
+
+				}
+
+				const dtPosition = gpuCompute.createTexture();
+				const dtVelocity = gpuCompute.createTexture();
+				fillPositionTexture( dtPosition );
+				fillVelocityTexture( dtVelocity );
+
+				velocityVariable = gpuCompute.addVariable( 'textureVelocity', document.getElementById( 'fragmentShaderVelocity' ).textContent, dtVelocity );
+				positionVariable = gpuCompute.addVariable( 'texturePosition', document.getElementById( 'fragmentShaderPosition' ).textContent, dtPosition );
+
+				gpuCompute.setVariableDependencies( velocityVariable, [ positionVariable, velocityVariable ] );
+				gpuCompute.setVariableDependencies( positionVariable, [ positionVariable, velocityVariable ] );
+
+				positionUniforms = positionVariable.material.uniforms;
+				velocityUniforms = velocityVariable.material.uniforms;
+
+				positionUniforms[ 'time' ] = { value: 0.0 };
+				positionUniforms[ 'delta' ] = { value: 0.0 };
+				velocityUniforms[ 'time' ] = { value: 1.0 };
+				velocityUniforms[ 'delta' ] = { value: 0.0 };
+				velocityUniforms[ 'testing' ] = { value: 1.0 };
+				velocityUniforms[ 'separationDistance' ] = { value: 1.0 };
+				velocityUniforms[ 'alignmentDistance' ] = { value: 1.0 };
+				velocityUniforms[ 'cohesionDistance' ] = { value: 1.0 };
+				velocityUniforms[ 'freedomFactor' ] = { value: 1.0 };
+				velocityUniforms[ 'predator' ] = { value: new THREE.Vector3() };
+				velocityVariable.material.defines.BOUNDS = BOUNDS.toFixed( 2 );
+
+				velocityVariable.wrapS = THREE.RepeatWrapping;
+				velocityVariable.wrapT = THREE.RepeatWrapping;
+				positionVariable.wrapS = THREE.RepeatWrapping;
+				positionVariable.wrapT = THREE.RepeatWrapping;
+
+				const error = gpuCompute.init();
+
+				if ( error !== null ) {
+
+					console.error( error );
+
+				}
+
+			}
+
+			function initBirds( effectController ) {
+
+				const geometry = BirdGeometry;
+
+				// 尝试使用模型自带的材质，如果没有则创建默认材质
+				let m;
+				const useVertexColors = geometry.userData.hasVertexColors === true;
+
+				if (window.gltfData && window.gltfData.scene.children[0] && window.gltfData.scene.children[0].material) {
+					console.log('使用模型自带材质');
+					const originalMaterial = window.gltfData.scene.children[0].material;
+					
+					// 直接使用原始材质，不进行克隆，避免贴图丢失
+					m = originalMaterial;
+					m.vertexColors = useVertexColors;
+					m.envMapIntensity = 1.4;
+					if ( !useVertexColors ) {
+						m.color?.set( 0xffffff );
+					}
+					
+					console.log('原始材质信息:', {
+						type: originalMaterial.type,
+						color: originalMaterial.color ? originalMaterial.color.getHexString() : '无',
+						hasMap: !!originalMaterial.map,
+						hasNormalMap: !!originalMaterial.normalMap,
+						emissive: originalMaterial.emissive ? originalMaterial.emissive.getHexString() : '无'
+					});
+					
+					// 确保贴图正确加载
+					if (originalMaterial.map) {
+						originalMaterial.map.needsUpdate = true;
+						console.log('颜色贴图已更新');
+					}
+					if (originalMaterial.normalMap) {
+						originalMaterial.normalMap.needsUpdate = true;
+						console.log('法线贴图已更新');
+					}
+					
+					// 强制材质更新
+					originalMaterial.needsUpdate = true;
+					
+				} else {
+					console.log('使用默认材质');
+					m = new THREE.MeshStandardMaterial( {
+						vertexColors: useVertexColors,
+						flatShading: true,
+						roughness: 0.8,
+						metalness: 0.2,
+						color: 0x4A90E2, // 添加默认蓝色
+						emissive: 0x001122, // 添加微弱的发光效果
+						emissiveIntensity: 0.3
+					} );
+					m.envMapIntensity = 1.4;
+				}
+
+				m.onBeforeCompile = ( shader ) => {
+
+					shader.uniforms.texturePosition = { value: null };
+					shader.uniforms.textureVelocity = { value: null };
+					shader.uniforms.textureAnimation = { value: textureAnimation };
+					shader.uniforms.time = { value: 1.0 };
+					shader.uniforms.size = { value: effectController.size };
+					shader.uniforms.delta = { value: 0.0 };
+
+					let token = '#define STANDARD';
+
+					let insert = /* glsl */`
+						attribute vec4 reference;
+						attribute vec4 seeds;
+						attribute vec3 birdColor;
+						uniform sampler2D texturePosition;
+						uniform sampler2D textureVelocity;
+						uniform sampler2D textureAnimation;
+						uniform float size;
+						uniform float time;
+						vec3 birdPos;
+						vec3 birdVelocity;
+						mat3 birdRotationMatrix;
+					`;
+
+					shader.vertexShader = shader.vertexShader.replace( token, token + insert );
+
+					token = '#include <beginnormal_vertex>';
+
+					insert = /* glsl */`
+						vec4 tmpPosNormal = texture2D( texturePosition, reference.xy );
+						birdPos = tmpPosNormal.xyz;
+
+						vec3 sampledVelocity = texture2D( textureVelocity, reference.xy ).xyz;
+						float speed = length( sampledVelocity );
+						if ( speed > 0.0001 ) {
+							birdVelocity = sampledVelocity / speed;
+						} else {
+							birdVelocity = vec3( 1.0, 0.0, 0.0 );
+						}
+
+						vec3 orientedVelocity = birdVelocity;
+						orientedVelocity.z *= -1.0;
+
+						float lenXZ = length( orientedVelocity.xz );
+						float cosry;
+						float sinry;
+						if ( lenXZ > 0.0001 ) {
+							cosry = orientedVelocity.x / lenXZ;
+							sinry = orientedVelocity.z / lenXZ;
+						} else {
+							cosry = 1.0;
+							sinry = 0.0;
+						}
+
+						float cosrz = sqrt( max( 0.0, 1.0 - orientedVelocity.y * orientedVelocity.y ) );
+						float sinrz = orientedVelocity.y;
+
+						mat3 maty = mat3( cosry, 0.0, -sinry,
+										 0.0, 1.0, 0.0,
+										 sinry, 0.0, cosry );
+						mat3 matz = mat3( cosrz, sinrz, 0.0,
+										 -sinrz, cosrz, 0.0,
+										 0.0, 0.0, 1.0 );
+
+						birdRotationMatrix = maty * matz;
+
+						vec3 objectNormal = normalize( birdRotationMatrix * normal );
+
+						#ifdef USE_TANGENT
+							vec3 objectTangent = normalize( birdRotationMatrix * tangent.xyz );
+							vec3 objectBitangent = cross( objectNormal, objectTangent ) * tangent.w;
+						#endif
+					`;
+
+					shader.vertexShader = shader.vertexShader.replace( token, insert );
+
+					token = '#include <begin_vertex>';
+
+					insert = /* glsl */`
+						vec3 velocity = birdVelocity;
+						float velocityOffset = velocity.z / 20000.0;
+						float animationIndex = mod( time + seeds.x * ( 0.0004 + seeds.y / 10000.0 + velocityOffset ), reference.w );
+						vec3 aniPos = texture2D( textureAnimation, vec2( reference.z, animationIndex ) ).xyz;
+
+						vec3 newPosition = position + aniPos;
+						newPosition = birdRotationMatrix * newPosition;
+						newPosition *= size + seeds.y * size * 0.2;
+						newPosition += birdPos;
+
+						vec3 transformed = vec3( newPosition );
+					`;
+
+					shader.vertexShader = shader.vertexShader.replace( token, insert );
+
+					materialShader = shader;
+
+				};
+
+				birdMesh = new THREE.Mesh( geometry, m );
+				// MODIFICATION: Turned off shadow casting for performance
+				birdMesh.castShadow = false;
+				birdMesh.receiveShadow = false;
+
+				scene.add( birdMesh );
+
+			}
+
+			function fillPositionTexture( texture ) {
+
+				const theArray = texture.image.data;
+
+				for ( let k = 0, kl = theArray.length; k < kl; k += 4 ) {
+
+					const x = Math.random() * BOUNDS - BOUNDS_HALF;
+					const y = Math.random() * BOUNDS - BOUNDS_HALF;
+					const z = Math.random() * BOUNDS - BOUNDS_HALF;
+
+					theArray[ k + 0 ] = x;
+					theArray[ k + 1 ] = y;
+					theArray[ k + 2 ] = z;
+					theArray[ k + 3 ] = 1;
+
+				}
+
+			}
+
+			function fillVelocityTexture( texture ) {
+
+				const theArray = texture.image.data;
+
+				for ( let k = 0, kl = theArray.length; k < kl; k += 4 ) {
+
+					const x = Math.random() - 0.5;
+					const y = Math.random() - 0.5;
+					const z = Math.random() - 0.5;
+
+					theArray[ k + 0 ] = x * 10;
+					theArray[ k + 1 ] = y * 10;
+					theArray[ k + 2 ] = z * 10;
+					theArray[ k + 3 ] = 1;
+
+				}
+
+			}
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+				windowHalfY = window.innerHeight / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onPointerMove( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				mouseX = event.clientX - windowHalfX;
+				mouseY = event.clientY - windowHalfY;
+
+			}
+
+			//
+
+			function animate() {
+
+				render();
+
+			}
+
+			function render() {
+
+				const now = performance.now();
+				let delta = ( now - last ) / 1000;
+
+				if ( delta > 1 ) delta = 1; // safety cap on large deltas
+				last = now;
+
+				positionUniforms[ 'time' ].value = now;
+				positionUniforms[ 'delta' ].value = delta;
+				velocityUniforms[ 'time' ].value = now;
+				velocityUniforms[ 'delta' ].value = delta;
+				if ( materialShader ) materialShader.uniforms[ 'time' ].value = now / 1000;
+				if ( materialShader ) materialShader.uniforms[ 'delta' ].value = delta;
+
+				velocityUniforms[ 'predator' ].value.set( 0.5 * mouseX / windowHalfX, - 0.5 * mouseY / windowHalfY, 0 );
+
+				// MODIFICATION: This is no longer necessary as mouse drag is used for camera.
+				// Predator still follows the cursor position updated in onPointerMove.
+				// mouseX = 10000;
+				// mouseY = 10000;
+
+				// MODIFICATION: Update the OrbitControls
+				controls.update();
+
+				gpuCompute.compute();
+
+				if ( materialShader ) materialShader.uniforms[ 'texturePosition' ].value = gpuCompute.getCurrentRenderTarget( positionVariable ).texture;
+				if ( materialShader ) materialShader.uniforms[ 'textureVelocity' ].value = gpuCompute.getCurrentRenderTarget( velocityVariable ).texture;
+
+				// 更新太阳扭曲效果
+				if ( sunDistortionSprite && sunDistortionMaterial ) {
+					// 始终让扭曲平面正对相机，避免透视拉伸
+					sunDistortionSprite.quaternion.copy(camera.quaternion);
+					
+					// 更新材质参数
+					sunDistortionMaterial.uniforms[ 'time' ].value = now / 1000;
+					
+					// 先渲染背景到纹理（不包含扭曲平面和鱼群）
+					renderer.setRenderTarget(renderTarget);
+					sunDistortionSprite.visible = false; // 隐藏扭曲平面
+					
+					// 隐藏鱼群避免反射 - 确保完全隐藏
+					const originalBirdVisibility = birdMesh.visible;
+					birdMesh.visible = false;
+					
+					// 清除渲染目标，确保没有残留
+					renderer.clear();
+					renderer.render(scene, camera);
+					
+					// 恢复鱼群可见性
+					birdMesh.visible = originalBirdVisibility;
+					
+					// 设置背景纹理到扭曲材质
+					sunDistortionMaterial.uniforms.tDiffuse.value = renderTarget.texture;
+					
+					// 渲染扭曲效果（显示扭曲平面）
+					renderer.setRenderTarget(null);
+					sunDistortionSprite.visible = true; // 显示扭曲平面
+					renderer.render(scene, camera);
+					
+					console.log('扭曲效果已渲染，强度:', sunDistortionMaterial.uniforms.strength.value);
+					console.log('扭曲平面可见性:', sunDistortionSprite.visible);
+					console.log('扭曲平面位置:', sunDistortionSprite.position);
+					console.log('扭曲平面旋转:', sunDistortionSprite.rotation);
+				} else {
+					// 正常渲染
+					renderer.render( scene, camera );
+				}
+
+			}
+
+		</script>
+	</body>
 </html>
